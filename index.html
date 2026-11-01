@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kapybara svět</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#e8f3dc;color:#203522;font-family:system-ui,Arial,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:#fff}
+h1{font-size:22px;margin:0}button,select{border:1px solid #9bb89a;border-radius:10px;padding:9px 13px;font-size:15px;background:#fff;color:#203522;cursor:pointer}
+button.primary{background:#277b48;color:white;border-color:#277b48;font-weight:bold}
+main{max-width:1100px;margin:auto;padding:12px}
+#gameWrap{position:relative;background:#9dcc76;border-radius:14px;overflow:hidden}
+canvas{display:block;width:100%;height:auto;aspect-ratio:16/9}
+#overlay{position:absolute;inset:0;background:#10251dcc;display:flex;align-items:center;justify-content:center;padding:12px}
+.dialog{background:white;color:#203522;border-radius:16px;padding:20px;width:min(520px,100%);max-height:95%;overflow:auto;text-align:center}
+.hidden{display:none!important}.row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:8px 0}
+.choices{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:6px 0 12px}.choices button.selected{outline:3px solid #e6a83c;background:#fff0c9}
+#stats{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.stat{background:white;border-radius:10px;padding:8px 12px}
+#help,#message{background:white;border-radius:10px;padding:10px;margin-top:10px}
+#settings{position:absolute;inset:0;background:#10251dcc;display:flex;align-items:center;justify-content:center;padding:12px}
+#settings .dialog{text-align:left}
+#gameWrap:fullscreen{width:100vw;height:100vh;border-radius:0;background:#9dcc76}
+#gameWrap:fullscreen canvas{width:100%;height:100%;aspect-ratio:auto;object-fit:contain}
+@media(max-width:600px){h1{font-size:18px}button{font-size:13px;padding:8px}}
+</style>
+<script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+<header><h1>🥕 Kapybara svět</h1><div class="row" style="margin:0"><button id="settingsBtn">⚙️ Nastavení</button><button id="saveBtn">💾 Uložit postup</button><button id="downloadBtn">⬇️ Uložit hru do počítače</button></div></header>
+<main>
+<div class="row"><button id="onlineBtn">🌐 Hrát přes internet</button></div>
+<div id="online" class="hidden" style="position:fixed;inset:0;z-index:20;background:#10251dcc;display:flex;align-items:center;justify-content:center;padding:12px"><div class="dialog">
+<h2>🌐 Online Kapybara svět</h2><p>Vytvoř místnost nebo se připoj pomocí PINu.</p>
+<p><label>Tvoje přezdívka<br><input id="netName" maxlength="18" value="Kapybara" style="padding:9px;border:1px solid #9bb89a;border-radius:9px;width:90%"></label></p>
+<div class="row"><button class="primary" id="createRoom">Vytvořit místnost</button></div>
+<p>PIN místnosti<br><input id="netPin" inputmode="numeric" maxlength="6" placeholder="Zadej 6 číslic" style="padding:10px;border:1px solid #9bb89a;border-radius:9px;width:150px;text-align:center;font-size:20px;letter-spacing:4px"></p>
+<div class="row"><button id="joinRoom">Připojit se</button><button id="closeOnline">Zavřít</button></div>
+<div id="netStatus" style="padding:8px;background:#eef6e8;border-radius:9px">Zatím nejsi připojená.</div><div id="joinRequests"></div>
+</div></div>
+<div id="stats"><div class="stat">🥕 Mrkve: <b id="carrotTotal">0</b></div><div class="stat">🐟 Ryby: <b id="fishTotal">0</b></div><div class="stat">👥 Hráči: <b id="playerTotal">0</b></div><div class="stat" id="saveStatus">Postup není uložen</div></div>
+<div id="gameWrap">
+<canvas id="game" width="960" height="540"></canvas>
+<div id="overlay"><div class="dialog">
+<div style="font-size:42px">🦫 🥕 🐰</div><h2>Kapybara svět</h2><p>Vyber počet hráčů a jejich zvířátka.</p>
+<label>Počet hráčů: <select id="count"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+<div id="pickers"></div>
+<div class="row"><button class="primary" id="start">▶ Nová hra</button><button id="continue">↩ Pokračovat</button><button id="importBtn">📂 Načíst uložený postup</button><input id="importFile" type="file" accept=".json,application/json" hidden></div>
+<p style="font-size:13px;color:#607060">Hra se ukládá do tohoto prohlížeče. Postup si můžeš také stáhnout jako soubor.</p>
+</div></div>
+<div id="settings" class="hidden"><div class="dialog"><div class="row" style="justify-content:space-between"><h2>⚙️ Nastavení</h2><button id="closeSettings">✕</button></div>
+<p>Rychlost pohybu<br><select id="speed"><option value="2.4">Pomalá</option><option value="3.3" selected>Normální</option><option value="4.5">Rychlá</option></select></p>
+<p><label><input type="checkbox" id="sound" checked> Zvukové efekty</label></p>
+<p><label><input type="checkbox" id="hints" checked> Zobrazovat nápovědu</label></p>
+<div class="row"><button class="primary" id="applySettings">Uložit nastavení</button><button id="deleteSave">Smazat uložený postup</button></div></div></div>
+</div>
+<div class="row"><button id="pause">⏸ Pozastavit</button><button id="resume" class="hidden">▶ Pokračovat</button><button id="fullscreen">⛶ Celá obrazovka</button><button id="home">⌂ Nabídka</button></div>
+<div id="help"><b>Ovládání:</b> V online hře – W A S D · Hráč 1 – W A S D · Hráč 2 – šipky · Hráč 3 – I J K L · Hráč 4 – T F G H.<br>🥕 Sbírej mrkve. Vstup do rybníka a sbírej ryby. Stromy tě zastaví a při nárazu ztratíš mrkev; další hráč ji získá.</div>
+<div id="message">Vyber postavičky a začni hrát.</div>
+</main>
+<script>
+(()=>{
+const $=id=>document.getElementById(id),canvas=$('game'),ctx=canvas.getContext('2d'),wrap=$('gameWrap');
+const W=1600,H=1100,pond={x:760,y:560,rx:205,ry:155};
+const animals=['🦫','🦊','🐼','🐰','🐻','🐱','🐸','🐵','🐧'],names=['Bobr','Liška','Panda','Králík','Medvěd','Kočka','Žabka','Opice','Tučňák'];
+const controls=[['w','s','a','d'],['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'],['i','k','j','l'],['t','g','f','h']];
+let selected=[0,1,2,3],players=[],trees=[],carrots=[],fish=[],keys={},running=false,paused=false,settings={speed:3.3,sound:true,hints:true},frame=0,last=0;
+let socket=null,netRole='',netPlayerId=-1,netConnected=false,remoteKeys={},lastNetSend=0,netNames={};
+const KEY='kapybara-save-v3';
+const inPond=(x,y)=>((x-pond.x)/pond.rx)**2+((y-pond.y)/pond.ry)**2<1;
+const rnd=(a,b)=>a+Math.random()*(b-a);
+function place(wet){let x,y,n=0;do{x=rnd(80,W-80);y=rnd(80,H-80);n++}while(n<250&&(inPond(x,y)!==wet||trees.some(t=>Math.hypot(t.x-x,t.y-y)<55)));return{x,y,alive:true,timer:0}}
+function world(){trees=[];carrots=[];fish=[];for(let i=0;i<38;i++){let x,y,n=0;do{x=rnd(80,W-80);y=rnd(80,H-80);n++}while(n<250&&(inPond(x,y)||Math.hypot(x-280,y-540)<170||Math.hypot(x-pond.x,y-pond.y)<250||trees.some(t=>Math.hypot(t.x-x,t.y-y)<75)));trees.push({x,y})}for(let i=0;i<25;i++)carrots.push(place(false));for(let i=0;i<12;i++)fish.push(place(true))}
+function updateStats(){$('carrotTotal').textContent=players.reduce((s,p)=>s+p.carrots,0);$('fishTotal').textContent=players.reduce((s,p)=>s+p.fish,0);$('playerTotal').textContent=players.length}
+function say(s){$('message').textContent=s}
+function beep(f){if(!settings.sound)return;try{let a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();o.frequency.value=f;g.gain.value=.035;o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+.08);o.onended=()=>a.close()}catch(e){}}
+function startGame(n){players=Array.from({length:n},(_,i)=>({id:i,x:280+(i%2)*75,y:480+Math.floor(i/2)*75,animal:selected[i],carrots:0,fish:0,hit:false}));world();running=true;paused=false;$('overlay').classList.add('hidden');$('pause').classList.remove('hidden');$('resume').classList.add('hidden');updateStats();say('Vyraz na louku a najdi rybník!');save();if(netRole==='host')sendState()}
+function save(){if(!players.length){say('Nejdřív spusť hru.');return}let data={version:3,players,trees,carrots,fish,settings,selected};try{localStorage.setItem(KEY,JSON.stringify(data));$('saveStatus').textContent='💾 Postup uložen';say('Postup je uložen v tomto prohlížeči.')}catch(e){say('Prohlížeč nedovolil uložit postup. Stáhni si soubor s hrou nebo postupem.')}}
+function loadData(d){if(!d||d.version!==3||!Array.isArray(d.players))throw Error('Soubor nemá správný formát.');players=d.players;trees=d.trees||[];carrots=d.carrots||[];fish=d.fish||[];settings=d.settings||settings;selected=d.selected||selected;running=true;paused=false;$('overlay').classList.add('hidden');$('settings').classList.add('hidden');applySettings();updateStats();say('Pokračuješ v uložené hře.')}
+function load(){try{let d=JSON.parse(localStorage.getItem(KEY)||'null');if(!d)return false;loadData(d);return true}catch(e){say('Uložený postup se nepodařilo načíst.');return false}}
+function download(filename,content,type){let blob=new Blob([content],{type}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+function exportGame(){let source='<!DOCTYPE html>\n'+document.documentElement.outerHTML;download('Kapybara-svet.html',source,'text/html;charset=utf-8');say('Hra byla stažena. Otevři soubor Kapybara-svet.html v prohlížeči.')}
+function exportSave(){if(!players.length){say('Nejdřív spusť hru.');return}let d={version:3,players,trees,carrots,fish,settings,selected};download('Kapybara-postup.json',JSON.stringify(d),'application/json');say('Uložený postup byl stažen do počítače.')}
+function applySettings(){$('speed').value=settings.speed;$('sound').checked=settings.sound;$('hints').checked=settings.hints;$('help').classList.toggle('hidden',!settings.hints)}
+function drawWorld(wet){ctx.fillStyle=wet?'#287fa9':'#a9d77b';ctx.fillRect(0,0,W,H);if(wet){for(let i=0;i<35;i++){ctx.strokeStyle='#b9eaf044';ctx.beginPath();ctx.arc((i*151+70)%W,(i*89+90)%H,12+i%4*5,0,7);ctx.stroke()}for(let i=0;i<22;i++){ctx.font='28px serif';ctx.fillText('🌿',(i*191+40)%W,H-((i*73)%260))}fish.forEach(o=>{if(o.alive){ctx.font='27px serif';ctx.fillText('🐟',o.x,o.y+9)}})}else{ctx.strokeStyle='#d9c48c';ctx.lineWidth=35;ctx.beginPath();ctx.moveTo(0,530);ctx.quadraticCurveTo(500,430,pond.x-130,pond.y+90);ctx.stroke();ctx.fillStyle='#65b9d6';ctx.beginPath();ctx.ellipse(pond.x,pond.y,pond.rx,pond.ry,0,0,7);ctx.fill();ctx.strokeStyle='#d4f3e9';ctx.lineWidth=9;ctx.stroke();ctx.font='24px serif';ctx.textAlign='center';ctx.fillStyle='#174d67';ctx.fillText('RYBNÍK',pond.x,pond.y-pond.ry-18);trees.forEach(t=>{ctx.font='43px serif';ctx.fillText('🌳',t.x,t.y+12)});carrots.forEach(o=>{if(o.alive){ctx.font='27px serif';ctx.fillText('🥕',o.x,o.y+9)}})}}
+function pane(group,x,y,w,h,wet){ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();let cx=group.reduce((s,p)=>s+p.x,0)/group.length,cy=group.reduce((s,p)=>s+p.y,0)/group.length;ctx.translate(x+w/2-cx,y+h/2-cy);drawWorld(wet);group.forEach(p=>{ctx.textAlign='center';ctx.font='38px serif';ctx.fillText(animals[p.animal]||'🦫',p.x,p.y+13);ctx.font='bold 13px system-ui';ctx.fillStyle='#253b25';ctx.fillText('Hráč '+(p.id+1),p.x,p.y-22)});ctx.restore();ctx.fillStyle='#14281dcc';ctx.fillRect(x+8,y+8,145,26);ctx.fillStyle='white';ctx.font='bold 14px system-ui';ctx.textAlign='left';ctx.fillText(wet?'🌊 Pod vodou':'🌳 Na louce',x+16,y+26)}
+function render(){ctx.clearRect(0,0,960,540);if(!players.length){ctx.fillStyle='#a9d77b';ctx.fillRect(0,0,960,540);ctx.font='70px serif';ctx.fillText('🦫 🥕 🐰',370,280);return}let wet=players.filter(p=>inPond(p.x,p.y)),dry=players.filter(p=>!inPond(p.x,p.y));if(wet.length&&dry.length){pane(wet,0,0,960,270,true);pane(dry,0,270,960,270,false)}else pane(wet.length?wet:dry,0,0,960,540,!!wet.length)}
+function collide(x,y){return trees.some(t=>Math.hypot(t.x-x,t.y-y)<39)}
+function collect(){players.forEach(p=>{let water=inPond(p.x,p.y),items=water?fish:carrots;items.forEach(o=>{if(o.alive&&Math.hypot(o.x-p.x,o.y-p.y)<36){o.alive=false;o.timer=600+(Math.random()*400|0);if(water)p.fish+=2;else p.carrots++;say(water?'🐟 Ryba! +2 body':'🥕 Mrkev! +1 mrkev');beep(water?620:480)}})});for(const [arr,wet] of [[carrots,false],[fish,true]])arr.forEach(o=>{if(!o.alive&&--o.timer<=0){let n=place(wet);o.x=n.x;o.y=n.y;o.alive=true}})}
+function move(){if(!running||paused)return;players.forEach((p,i)=>{let c=controls[i]||controls[0],remote=(netRole==='host'&&i>0),source=remote?(remoteKeys[i]||{}):keys;let dx=remote?((source.d?1:0)-(source.a?1:0)):((source[c[3]]?1:0)-(source[c[2]]?1:0)),dy=remote?((source.s?1:0)-(source.w?1:0)):((source[c[1]]?1:0)-(source[c[0]]?1:0));if(!dx&&!dy){if(!collide(p.x,p.y))p.hit=false;return}let l=Math.hypot(dx,dy),nx=Math.max(25,Math.min(W-25,p.x+dx/l*settings.speed)),ny=Math.max(25,Math.min(H-25,p.y+dy/l*settings.speed));if(collide(nx,ny)){if(!p.hit){p.carrots=Math.max(0,p.carrots-1);if(players.length>1)players[(i+1)%players.length].carrots++;say('🌳 Náraz! Hráč '+(i+1)+' ztratil mrkev.');beep(180)}p.hit=true}else{p.x=nx;p.y=ny;p.hit=false}});collect();updateStats()}
+function loop(t){let dt=t-last;last=t;frame++;if(running&&!paused&&netRole!=='guest'){move();if(frame%300===0)save();if(netRole==='host'&&t-lastNetSend>90){lastNetSend=t;sendState()}}render();requestAnimationFrame(loop)}
+function buildPickers(){let count=+$('count').value,box=$('pickers');box.innerHTML='';for(let i=0;i<count;i++){let title=document.createElement('b');title.textContent='Postavička hráče '+(i+1);box.append(title);let row=document.createElement('div');row.className='choices';animals.forEach((a,n)=>{let b=document.createElement('button');b.textContent=a+' '+names[n];if(selected[i]===n)b.classList.add('selected');b.onclick=()=>{selected[i]=n;buildPickers()};row.append(b)});box.append(row)}}
+function netStatus(t){$('netStatus').textContent=t}
+function sendState(){if(socket&&netRole==='host'&&netConnected)socket.emit('game-state',{players,trees,carrots,fish,settings,selected,paused,running,names:netNames})}
+function connectSocket(){if(socket&&socket.connected)return;socket=io();socket.on('connect',()=>netStatus('Připojeno k hernímu serveru.'));socket.on('connect_error',()=>netStatus('Server není dostupný. Zkus to prosím později.'));
+socket.on('room-created',d=>{netRole='host';netConnected=true;netStatus('Místnost je připravená. Pošli PIN '+d.pin+' tomu, koho chceš pozvat.');$('netPin').value=d.pin;});
+socket.on('join-pending',()=>netStatus('Žádost o připojení odeslána. Čekej na schválení hostitele.'));
+socket.on('join-request',d=>{let box=$('joinRequests'),item=document.createElement('div');item.style='padding:8px;margin:6px;background:#fff3cf;border-radius:8px';let label=document.createElement('span');label.textContent=(d.name||'Hráč')+' chce vstoupit. ';let yes=document.createElement('button');yes.textContent='Schválit';yes.onclick=()=>{socket.emit('approve-player',{id:d.id});item.remove()};let no=document.createElement('button');no.textContent='Odmítnout';no.onclick=()=>{socket.emit('deny-player',{id:d.id});item.remove()};item.append(label,yes,no);box.append(item)});
+socket.on('player-approved',d=>{netPlayerId=d.playerId;netRole='guest';netConnected=true;netStatus('Připojeno! Jsi hráč '+(d.playerId+1)+'. Až hostitel spustí hru, můžeš hrát.');$('online').classList.add('hidden')});
+socket.on('player-denied',()=>netStatus('Hostitel tvoji žádost odmítl.'));
+socket.on('player-joined',d=>{if(netRole==='host'){if(players.length<4){players.push({id:d.playerId,x:360+d.playerId*45,y:480,animal:(d.playerId+1)%animals.length,carrots:0,fish:0,hit:false});netNames[d.playerId]=d.name||('Hráč '+(d.playerId+1));updateStats();sendState();say((d.name||'Nový hráč')+' se připojil do hry.')}}});
+socket.on('input-from-player',d=>{if(netRole==='host'&&d.playerId>0)remoteKeys[d.playerId]=d.keys||{}});
+socket.on('game-state',d=>{if(netRole==='guest'){players=d.players||[];trees=d.trees||[];carrots=d.carrots||[];fish=d.fish||[];settings=d.settings||settings;paused=!!d.paused;running=!!d.running;netNames=d.names||{};updateStats();if(running)$('overlay').classList.add('hidden')}});
+socket.on('host-left',()=>{netConnected=false;netRole='';netStatus('Hostitel ukončil spojení. Místnost byla zavřena.');say('Spojení s hostitelem bylo ukončeno.')});}
+$('onlineBtn').onclick=()=>{$('online').classList.remove('hidden');connectSocket()};$('closeOnline').onclick=()=>$('online').classList.add('hidden');
+$('createRoom').onclick=()=>{connectSocket();let go=()=>socket.emit('create-room',{name:$('netName').value.trim()||'Hostitel'});if(socket.connected)go();else socket.once('connect',go)};
+$('joinRoom').onclick=()=>{connectSocket();let go=()=>socket.emit('join-room',{pin:$('netPin').value.trim(),name:$('netName').value.trim()||'Hráč'});if(socket.connected)go();else socket.once('connect',go)};
+$('count').onchange=buildPickers;$('start').onclick=()=>{startGame(netRole==='host'?1:+$('count').value);try{wrap.requestFullscreen?.()}catch(e){}if(netRole==='host')sendState()};
+$('continue').onclick=()=>{if(!load())say('Uložený postup se nenašel.');};
+$('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{let f=e.target.files[0];if(!f)return;try{loadData(JSON.parse(await f.text()));save()}catch(err){say('Soubor se nepodařilo načíst.')}e.target.value=''};
+$('saveBtn').onclick=exportSave;$('downloadBtn').onclick=exportGame;
+$('settingsBtn').onclick=()=>$('settings').classList.remove('hidden');$('closeSettings').onclick=()=>$('settings').classList.add('hidden');
+$('applySettings').onclick=()=>{settings={speed:+$('speed').value,sound:$('sound').checked,hints:$('hints').checked};applySettings();try{localStorage.setItem('kapy-settings',JSON.stringify(settings))}catch(e){}if(players.length)save();$('settings').classList.add('hidden');say('Nastavení uloženo.')};
+$('deleteSave').onclick=()=>{if(confirm('Smazat uložený postup?')){localStorage.removeItem(KEY);$('saveStatus').textContent='Postup není uložen';say('Uložený postup byl smazán.')}};
+$('pause').onclick=()=>{paused=true;$('pause').classList.add('hidden');$('resume').classList.remove('hidden');say('Hra pozastavena.')};$('resume').onclick=()=>{paused=false;$('resume').classList.add('hidden');$('pause').classList.remove('hidden')};
+$('home').onclick=()=>{if(players.length)save();paused=true;$('overlay').classList.remove('hidden');$('count').value=String(players.length||2);buildPickers()};
+$('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await wrap.requestFullscreen()}catch(e){say('Prohlížeč celou obrazovku nepovolil. Zkus klávesu F11.')}};
+window.addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();let k=e.key.length===1?e.key.toLowerCase():e.key;if(netRole==='guest'&&netConnected){if(['w','a','s','d'].includes(k)){keys[k]=true;socket.emit('player-input',{keys})}}else keys[k]=true});
+window.addEventListener('keyup',e=>{let k=e.key.length===1?e.key.toLowerCase():e.key;if(netRole==='guest'&&netConnected){keys[k]=false;if(['w','a','s','d'].includes(k))socket.emit('player-input',{keys})}else keys[k]=false});window.addEventListener('blur',()=>{keys={};if(netRole==='guest'&&socket)socket.emit('player-input',{keys:{}})});
+try{let s=JSON.parse(localStorage.getItem('kapy-settings')||'null');if(s)settings={...settings,...s}}catch(e){}
+applySettings();buildPickers();try{if(localStorage.getItem(KEY))$('continue').disabled=false;else $('continue').disabled=true}catch(e){$('continue').disabled=true}
+render();requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
